@@ -57,6 +57,7 @@ class Ui(QtWidgets.QMainWindow):
 
         # ADD ITEMS TO SETUP MENUS
         self.addMicroStepping()
+        self.addMaxSpeed()
         
         # INITIALISE UI
         self.show()
@@ -74,7 +75,7 @@ class Ui(QtWidgets.QMainWindow):
         self.endeff_home.clicked.connect(self.homeGripper)
         self.arm_calibrate.clicked.connect(self.calibrateRobot)
         self.micro_stepping_list.activated.connect(self.changeMicroStepping)
-        self.max_speed_list.activated.connect(self.changeMaxFeedRate)
+        self.max_speed_list.activated.connect(self.changeMaxSpeed)
         self.program_exit.clicked.connect(self.programExit)
 
     # LINKS BUTTONS THAT CONTROL SEQUENCE FILE
@@ -169,6 +170,8 @@ class Ui(QtWidgets.QMainWindow):
         self.endeff_home.setEnabled(state)   
         self.arm_calibrate.setEnabled(state)
         self.sequence_speed.setEnabled(state)
+        self.micro_stepping_list.setEnabled(state)
+        self.max_speed_list.setEnabled(state)
 
     # ENABLE/DISABLE SEQUENCE PLAYBACK CONTROL BUTTONS
     def enablePlaybackButtons(self,state):
@@ -644,12 +647,25 @@ class Ui(QtWidgets.QMainWindow):
 
         # INITIALLY SET BAUD TO 9600 (ARRAY INDEX 5)
         self.micro_stepping_list.setCurrentIndex(self.robotArm.microSteps.index('8'))
-        self.serialComms.microStep = self.robotArm.microSteps.index('8')
+        self.robotArm.microStep = self.robotArm.microSteps[self.robotArm.microSteps.index('8')]
 
     def changeMicroStepping(self,item):  
-        self.robotArm.microStep
-        self.robotArm.xStepDeg = 200 * int(item) * self.robotArm.xGearRatio
-    
+        self.robotArm.microStep = self.robotArm.microSteps[item]
+        self.gCodeInitialSetup()
+        
+    def addMaxSpeed(self):
+        # ADD AVAILABLE MAX SPEED OPTIONS TO DROP DOWN MENU
+        for speed in self.robotArm.maxSpeeds:
+            self.max_speed_list.addItem(speed)
+
+        # INITIALLY SET MAX SPEED TO 6000
+        self.max_speed_list.setCurrentIndex(self.robotArm.maxSpeeds.index('6000'))
+        self.robotArm.maxSpeed = self.robotArm.maxSpeeds[self.robotArm.maxSpeeds.index('6000')]
+
+    def changeMaxSpeed(self,item):
+        self.robotArm.maxSpeed = self.robotArm.maxSpeeds[item]
+        self.gCodeInitialSetup()
+
     def homeRobot(self):
         self.serial_terminal.appendPlainText('Arm set to home position')
         self.robotArm.xPos = 0.0
@@ -951,32 +967,35 @@ class Ui(QtWidgets.QMainWindow):
 
     # SET UP ARM CONTROLLER TO RECIEVE POSITION COMMANDS
     def gCodeInitialSetup(self):
-        self.serial_terminal.appendPlainText('Sending initial setup G-Code')
-        time.sleep(5)
-        print(self.comms.read().decode('ascii'))
-        #self.comms.write(('$100=%s' % self.robotArm.xStepDeg).encode('ascii'))
-        self.comms.write(('$100=123').encode('ascii'))
-        print(self.comms.read().decode('ascii'))
+        # CALCULATE STEPS PER DEGREE ROTATION DEPENDING ON WHICH MICROSTEPPING OPTION IS SELECTED
+        self.robotArm.xStepDeg = format(((200 * int(self.robotArm.microStep) * self.robotArm.xGearRatio) / 360), '.3f')
+        self.robotArm.yStepDeg = format(((200 * int(self.robotArm.microStep) * self.robotArm.yGearRatio) / 360), '.3f')
+        self.robotArm.zStepDeg = format(((200 * int(self.robotArm.microStep) * self.robotArm.zGearRatio) / 360), '.3f')
         
+        # SET
+        self.robotArm.xMaxFeedRate = self.robotArm.maxSpeed
+        self.robotArm.yMaxFeedRate = self.robotArm.maxSpeed
+        self.robotArm.zMaxFeedRate = self.robotArm.maxSpeed
+
+        self.serial_terminal.appendPlainText('Running GCode Setup')
+    
+        # SET STEPS PER DEGREE ROTATION FOR EACH AXIS
+        self.comms.write(('$100=%s' % self.robotArm.xStepDeg).encode('ascii'))
         self.serial_terminal.appendPlainText('X axis steps per degree: %s' % self.robotArm.xStepDeg)
-        
         self.comms.write(('$101=%s' % self.robotArm.yStepDeg).encode('ascii'))
         self.serial_terminal.appendPlainText('Y axis steps per degree: %s' % self.robotArm.yStepDeg)
-        
         self.comms.write(('$102=%s' % self.robotArm.zStepDeg).encode('ascii'))
         self.serial_terminal.appendPlainText('Z axis steps per degree: %s' % self.robotArm.zStepDeg)
        
+        # SET MAX SPEED FOR EACH AXIS
         self.comms.write(('$110=%s' % self.robotArm.xMaxFeedRate).encode('ascii'))
         self.serial_terminal.appendPlainText('X max feedrate: %s' % self.robotArm.xMaxFeedRate)
-       
         self.comms.write(('$111=%s' % self.robotArm.yMaxFeedRate).encode('ascii'))
         self.serial_terminal.appendPlainText('Y max feedrate: %s' % self.robotArm.yMaxFeedRate)
-        
         self.comms.write(('$112=%s' % self.robotArm.zMaxFeedRate).encode('ascii'))
         self.serial_terminal.appendPlainText('Z max feedrate: %s' % self.robotArm.zMaxFeedRate)
         
-        
-        self.serial_terminal.appendPlainText('Initial setup complete')
+        self.serial_terminal.appendPlainText('Setup complete')
 
 class RobotArm():
     ##################
@@ -1080,7 +1099,7 @@ class RobotArm():
         self.outputGCode = 'G01 ' + 'X' + str(format(self.lowerArmAngle,'.3f')) + \
         ' Y' + str(format(self.upperArmAngle,'.3f')) + \
         ' Z' + str(format(self.rotationAngle,'.3f')) + \
-        ' F' + str(100*int(self.sequenceSpeed)) + '\r\n'
+        ' F' + str(int(self.maxSpeed)*int(self.sequenceSpeed)/100) + '\r\n'
 
     # CALCULATES XYZ POSITION JOINTS
     def calculateJointCoordinates(self):

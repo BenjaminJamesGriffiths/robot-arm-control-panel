@@ -47,7 +47,7 @@ class Ui(QtWidgets.QMainWindow):
         # LOAD ARM SIMULATIONGRAPH SETTINGS
         self.updateGraph(True)
 
-         # UPDATE SEQUENCE CURRENT POSITION
+        # UPDATE SEQUENCE CURRENT POSITION
         self.sequenceEntryUpdate()
 
         # FIND AVAILABLE COM PORTS
@@ -488,7 +488,14 @@ class Ui(QtWidgets.QMainWindow):
 
             # STOP SEQUENCE IF IT HAS REACHED LAST POSITION
             if self.robotArm.sequenceSelected == self.robotArm.sequenceLength - 1:
-                self.fileStop()
+                # LOOP BACK TO BEGINNING IF REPEAT IS ENABLED
+                if self.robotArm.sequenceRepeat == True:
+                    self.robotArm.sequenceSelected = 0 
+                    self.sequence_show.setCurrentRow(self.robotArm.sequenceSelected)
+                    self.sequence_progress.setValue(self.robotArm.sequenceSelected * self.robotArm.sequenceProgressStep)
+                    self.sequenceListUpdate()
+                else:
+                    self.fileStop()
             else:
                 # MOVE TO NEXT POSITION
                 self.fileNext()
@@ -1058,7 +1065,7 @@ class RobotArm():
     microStep = 0
     maxSpeeds = ['1000','2000','3000','4000','5000','6000','7000','8000','9000','10000']
     maxSpeed = 0
-    accelerationRates = ['50','100','150','200','250','300']
+    accelerationRates = ['10','20','50','100','150','200','250','300']
     accelerationRate = 0
 
     xGearRatio = 50.89

@@ -75,6 +75,7 @@ class Ui(QtWidgets.QMainWindow):
         self.arm_calibrate.clicked.connect(self.calibrateRobot)
         self.micro_stepping_list.activated.connect(self.changeMicroStepping)
         self.max_speed_list.activated.connect(self.changeMaxSpeed)
+        self.acceleration_list.activated.connect(self.changeAccerationRate)
         self.program_exit.clicked.connect(self.programExit)
 
     # LINKS BUTTONS THAT CONTROL SEQUENCE FILE
@@ -280,6 +281,8 @@ class Ui(QtWidgets.QMainWindow):
             else:
                 self.enablePlaybackButtons(False)
 
+            # LET GRBL WAKE UP
+            self.timeDelay(1)
             # RUN ROBOT ARM INITIAL SETUP FUNCTIONS
             self.gCodeInitialSetup()
             
@@ -497,7 +500,6 @@ class Ui(QtWidgets.QMainWindow):
     def fileStop(self):
         self.robotArm.playbackStatus = False
         self.serial_terminal.appendPlainText('Sequence playback stopped')
-        pass
 
     def fileRepeat(self):
         state = self.sender()
@@ -982,7 +984,7 @@ class Ui(QtWidgets.QMainWindow):
     def calibrateRobot(self):
         self.serial_terminal.appendPlainText('Calibration procedure started')
         self.serial_terminal.appendPlainText('Calibration procedure complete')
-
+    
     # SET UP ARM CONTROLLER TO RECIEVE POSITION COMMANDS
     def gCodeInitialSetup(self):
         # CALCULATE STEPS PER DEGREE ROTATION DEPENDING ON WHICH MICROSTEPPING OPTION IS SELECTED
@@ -1003,28 +1005,46 @@ class Ui(QtWidgets.QMainWindow):
         self.serial_terminal.appendPlainText('Running GCode Setup')
     
         # SET STEPS PER DEGREE ROTATION FOR EACH AXIS
-        self.comms.write(('$100=%s' % self.robotArm.xStepDeg).encode('ascii'))
+        self.comms.flush()
+        self.comms.write(('$100=%s\r' % self.robotArm.xStepDeg).encode('ascii'))
         self.serial_terminal.appendPlainText('X axis steps per degree: %s' % self.robotArm.xStepDeg)
-        self.comms.write(('$101=%s' % self.robotArm.yStepDeg).encode('ascii'))
+        self.timeDelay(0.1)
+        self.comms.flush()
+        self.comms.write(('$101=%s\r' % self.robotArm.yStepDeg).encode('ascii'))
         self.serial_terminal.appendPlainText('Y axis steps per degree: %s' % self.robotArm.yStepDeg)
-        self.comms.write(('$102=%s' % self.robotArm.zStepDeg).encode('ascii'))
+        self.timeDelay(0.1)
+        self.comms.flush()
+        self.comms.write(('$102=%s\r' % self.robotArm.zStepDeg).encode('ascii'))
         self.serial_terminal.appendPlainText('Z axis steps per degree: %s' % self.robotArm.zStepDeg)
+        self.timeDelay(0.1)
        
         # SET MAX SPEED FOR EACH AXIS
-        self.comms.write(('$110=%s' % self.robotArm.xMaxFeedRate).encode('ascii'))
+        self.comms.flush()
+        self.comms.write(('$110=%s\r' % self.robotArm.xMaxFeedRate).encode('ascii'))
         self.serial_terminal.appendPlainText('X max feedrate: %s' % self.robotArm.xMaxFeedRate)
-        self.comms.write(('$111=%s' % self.robotArm.yMaxFeedRate).encode('ascii'))
+        self.timeDelay(0.1)
+        self.comms.flush()
+        self.comms.write(('$111=%s\r' % self.robotArm.yMaxFeedRate).encode('ascii'))
         self.serial_terminal.appendPlainText('Y max feedrate: %s' % self.robotArm.yMaxFeedRate)
-        self.comms.write(('$112=%s' % self.robotArm.zMaxFeedRate).encode('ascii'))
+        self.timeDelay(0.1)
+        self.comms.flush()
+        self.comms.write(('$112=%s\r' % self.robotArm.zMaxFeedRate).encode('ascii'))
         self.serial_terminal.appendPlainText('Z max feedrate: %s' % self.robotArm.zMaxFeedRate)
+        self.timeDelay(0.1)
 
         # SET ACCELERATION RATE FOR EACH AXIS
-        self.comms.write(('$120=%s' % self.robotArm.xAcceleration).encode('ascii'))
+        self.comms.flush()
+        self.comms.write(('$120=%s\r' % self.robotArm.xAcceleration).encode('ascii'))
         self.serial_terminal.appendPlainText('X acceleration: %s' % self.robotArm.xAcceleration)
-        self.comms.write(('$121=%s' % self.robotArm.yAcceleration).encode('ascii'))
+        self.timeDelay(0.1)
+        self.comms.flush()
+        self.comms.write(('$121=%s\r' % self.robotArm.yAcceleration).encode('ascii'))
         self.serial_terminal.appendPlainText('Y acceleration: %s' % self.robotArm.yAcceleration)
-        self.comms.write(('$122=%s' % self.robotArm.zAcceleration).encode('ascii'))
+        self.timeDelay(0.1)
+        self.comms.flush()
+        self.comms.write(('$122=%s\r' % self.robotArm.zAcceleration).encode('ascii'))
         self.serial_terminal.appendPlainText('Z acceleration: %s' % self.robotArm.zAcceleration)
+        self.timeDelay(0.1)
         
         self.serial_terminal.appendPlainText('Setup complete')
 

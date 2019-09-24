@@ -56,6 +56,7 @@ class Ui(QtWidgets.QMainWindow):
         # ADD ITEMS TO SETUP MENUS
         self.addMicroStepping()
         self.addMaxSpeed()
+        self.addAccelerationRate()
         
         # INITIALISE UI
         self.show()
@@ -170,6 +171,7 @@ class Ui(QtWidgets.QMainWindow):
         self.sequence_speed.setEnabled(state)
         self.micro_stepping_list.setEnabled(state)
         self.max_speed_list.setEnabled(state)
+        self.acceleration_list.setEnabled(state)
 
     # ENABLE/DISABLE SEQUENCE PLAYBACK CONTROL BUTTONS
     def enablePlaybackButtons(self,state):
@@ -643,7 +645,7 @@ class Ui(QtWidgets.QMainWindow):
         for step in self.robotArm.microSteps:
             self.micro_stepping_list.addItem(step)
 
-        # INITIALLY SET BAUD TO 9600 (ARRAY INDEX 5)
+        # INITIALLY SET TO 1/8TH MICROSTEPPING
         self.micro_stepping_list.setCurrentIndex(self.robotArm.microSteps.index('8'))
         self.robotArm.microStep = self.robotArm.microSteps[self.robotArm.microSteps.index('8')]
 
@@ -662,6 +664,19 @@ class Ui(QtWidgets.QMainWindow):
 
     def changeMaxSpeed(self,item):
         self.robotArm.maxSpeed = self.robotArm.maxSpeeds[item]
+        self.gCodeInitialSetup()
+
+    def addAccelerationRate(self):
+        # ADD AVAILABLE MICROSTEPPING OPTIONS TO DROP DOWN MENU
+        for rate in self.robotArm.accelerationRates:
+            self.acceleration_list.addItem(rate)
+
+        # INITIALLY SET TO 1/8TH MICROSTEPPING
+        self.acceleration_list.setCurrentIndex(self.robotArm.accelerationRates.index('200'))
+        self.robotArm.accelerationRate = self.robotArm.accelerationRates[self.robotArm.accelerationRates.index('200')]
+
+    def changeAccerationRate(self,item):
+        self.robotArm.accelerationRate = self.robotArm.accelerationRates[item]
         self.gCodeInitialSetup()
 
     def homeRobot(self):
@@ -980,6 +995,11 @@ class Ui(QtWidgets.QMainWindow):
         self.robotArm.yMaxFeedRate = self.robotArm.maxSpeed
         self.robotArm.zMaxFeedRate = self.robotArm.maxSpeed
 
+        # SET ACCELERATION FOR EACH AXIS
+        self.robotArm.xAcceleration = self.robotArm.accelerationRate
+        self.robotArm.yAcceleration = self.robotArm.accelerationRate
+        self.robotArm.zAcceleration = self.robotArm.accelerationRate
+
         self.serial_terminal.appendPlainText('Running GCode Setup')
     
         # SET STEPS PER DEGREE ROTATION FOR EACH AXIS
@@ -997,6 +1017,14 @@ class Ui(QtWidgets.QMainWindow):
         self.serial_terminal.appendPlainText('Y max feedrate: %s' % self.robotArm.yMaxFeedRate)
         self.comms.write(('$112=%s' % self.robotArm.zMaxFeedRate).encode('ascii'))
         self.serial_terminal.appendPlainText('Z max feedrate: %s' % self.robotArm.zMaxFeedRate)
+
+        # SET ACCELERATION RATE FOR EACH AXIS
+        self.comms.write(('$120=%s' % self.robotArm.xAcceleration).encode('ascii'))
+        self.serial_terminal.appendPlainText('X acceleration: %s' % self.robotArm.xAcceleration)
+        self.comms.write(('$121=%s' % self.robotArm.yAcceleration).encode('ascii'))
+        self.serial_terminal.appendPlainText('Y acceleration: %s' % self.robotArm.yAcceleration)
+        self.comms.write(('$122=%s' % self.robotArm.zAcceleration).encode('ascii'))
+        self.serial_terminal.appendPlainText('Z acceleration: %s' % self.robotArm.zAcceleration)
         
         self.serial_terminal.appendPlainText('Setup complete')
 
@@ -1010,6 +1038,8 @@ class RobotArm():
     microStep = 0
     maxSpeeds = ['1000','2000','3000','4000','5000','6000','7000','8000','9000','10000']
     maxSpeed = 0
+    accelerationRates = ['50','100','150','200','250','300']
+    accelerationRate = 0
 
     xGearRatio = 50.89
     yGearRatio = 50.89
@@ -1021,6 +1051,9 @@ class RobotArm():
     xMaxFeedRate = 0
     yMaxFeedRate = 0
     zMaxFeedRate = 0
+    xAcceleration = 0
+    yAcceleration = 0
+    zAcceleration = 0
 
     # TARGET POSITIONAL COORDINATES
     xPos = 0.0

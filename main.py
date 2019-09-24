@@ -1,5 +1,3 @@
-# BENS GIT TUTORIAL
-
 from PyQt5 import QtWidgets, uic, QtCore
 from PyQt5.QtGui import QIntValidator, QDoubleValidator
 import sys
@@ -913,14 +911,19 @@ class Ui(QtWidgets.QMainWindow):
         if state == True:
             # CREATE FIGURE
             self.figure = plt.figure()
+            self.figure.set_facecolor('none')
             # CREATE CANVAS TO PLOT GRAPH ON
             self.plotWidget = FigureCanvas(self.figure)
+            self.plotWidget.setStyleSheet('background-color: transparent;')
             # DEFINE A LAYOUT AND ADD LAYOUT TO GUI WIDGET
-            layout = QtWidgets.QVBoxLayout(self.simulation_graph)  
+            layout = QtWidgets.QVBoxLayout(self.simulation_graph) 
             layout.setContentsMargins(0, 0, 0, 0) 
             # DEFINE FIGURE AS 3D
             self.axes = self.figure.add_subplot(111, projection='3d')
-            
+            self.axes.set_facecolor('none')
+            self.axes.w_xaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+            self.axes.w_yaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+            self.axes.w_zaxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
             # ADD GRAPH TO CANVAS    
             layout.addWidget(self.plotWidget)
 
@@ -972,7 +975,7 @@ class Ui(QtWidgets.QMainWindow):
         self.robotArm.yStepDeg = format(((200 * int(self.robotArm.microStep) * self.robotArm.yGearRatio) / 360), '.3f')
         self.robotArm.zStepDeg = format(((200 * int(self.robotArm.microStep) * self.robotArm.zGearRatio) / 360), '.3f')
         
-        # SET
+        # SET MAX FEEDBACK FOR EACH AXIS
         self.robotArm.xMaxFeedRate = self.robotArm.maxSpeed
         self.robotArm.yMaxFeedRate = self.robotArm.maxSpeed
         self.robotArm.zMaxFeedRate = self.robotArm.maxSpeed

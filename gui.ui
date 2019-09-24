@@ -1441,7 +1441,7 @@
            </font>
           </property>
           <property name="text">
-           <string>Max Feedrate (°/min)</string>
+           <string>Max Speed (°/min)</string>
           </property>
           <property name="alignment">
            <set>Qt::AlignCenter</set>
@@ -1449,7 +1449,7 @@
          </widget>
         </item>
         <item>
-         <widget class="QComboBox" name="max_feed_rate_list">
+         <widget class="QComboBox" name="max_speed_list">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
             <horstretch>0</horstretch>

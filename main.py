@@ -272,22 +272,20 @@ class Ui(QtWidgets.QMainWindow):
             self.connect.setText('Disconnect')
             self.con_stat.setText('CONNECTED')
             self.con_stat.setStyleSheet('QLabel { color: green }')
-            self.enableMovementButtons(True)
             self.serial_terminal.appendPlainText('Connected to %s' % self.robotArm.availableComPorts[self.robotArm.comPort])
+
+            # LET GRBL WAKE UP
+            self.timeDelay(1)
+            # RUN ROBOT ARM INITIAL SETUP FUNCTIONS
+            self.gCodeInitialSetup()
+            # CALIBRATE ARM LOCATION USING END STOP SWITCHES
+            self.calibrateRobot()
 
             # ONLY SHOWS PLAYBACK BUTTONS IF THERE IS A VALID SEQUENCE LOADED
             if self.robotArm.fileStatus == True:
                 self.enablePlaybackButtons(True)
             else:
                 self.enablePlaybackButtons(False)
-
-            # LET GRBL WAKE UP
-            self.timeDelay(1)
-            # RUN ROBOT ARM INITIAL SETUP FUNCTIONS
-            self.gCodeInitialSetup()
-            
-            # CALIBRATE ARM LOCATION USING END STOP SWITCHES
-            self.calibrateRobot()
 
         else:
             self.serial_terminal.appendPlainText('No COM ports available')
@@ -418,87 +416,161 @@ class Ui(QtWidgets.QMainWindow):
         self.serial_terminal.appendPlainText('%s sequence playback started' % self.robotArm.fileName)
         self.robotArm.sequenceLength = len(self.robotArm.sequenceElements)
         while(self.robotArm.sequenceSelected != self.robotArm.sequenceLength) and self.robotArm.playbackStatus == True:
-            # GET XYZ COORDINATES FOR CURRENT POSITION
+
+            # GET XYZ COORDINATES FOR TARGET POSITION
             self.sequenceConverter()
-            # UPDATE POSITION AND CALCULATE GCODE COMMAND
-            self.positionUpdate()
-            # SEND GCODE COMMAND TO ROBOT CONTROL BOARD
-            self.comms.write(self.robotArm.outputGCode.encode('ascii'))
 
-            while True:
-                # READ CURRENT ARM POSITION FROM ARM CONTROL BOARD
-                self.comms.write('?'.encode('ascii'))
-                position = str(self.comms.readline().decode('ascii'))
-
-                startTime = startTime = datetime.datetime.now()
-                currentTime = 0
-                timeDifference = 0
-
-                # WAIT FOR ARM TO START MOVING (WHEN 'IDLE' BECOMES 'RUN')
-                while ('Idle' in position) and self.robotArm.playbackStatus == True:
-                    self.comms.write('?'.encode('ascii'))
-                    position = str(self.comms.readline().decode('ascii'))
-                    # UPDATE GUI
-                    QtWidgets.QApplication.processEvents()
-                    # MOVE ON TO NEXT POSITION IF THE ARM DOES NOT START MOVING AFTER 1 SECOND
-                    # THIS OCCURS WHEN THE ARM IS ALREADY IN THE DESIRED POSITION
-                    # GETTING CURRENT TIME
-                    currentTime = datetime.datetime.now()
-                     # CALCULATING SECONDS ELAPSED
-                    timeDifference = (currentTime - startTime).total_seconds()
-                    if timeDifference > 1:
-                        break
-
-                # WAIT FOR ARM TO FINISH MOVEMENT
-                # GET CURRENT ARM POSITION
-                while 'Run' in position:
-                    gcodeCurrentPosition = position
-                    # REMOVE NON-NUMERICAL CHARACTERS TO EXTRACT JUST THE COORDINATES
-                    junk = ['<Idle|','<Run|','MPos:','|',',']   
-                    for item in junk:
-                        gcodeCurrentPosition = gcodeCurrentPosition.replace(item, ' ')
-                        # PUT CURRENT POSITION IN ARRAY
-                        self.robotArm.gcodeResponse = gcodeCurrentPosition.split()
-
-                    # STORE ACTUAL ARM POSITION
-                    self.robotArm.lowerArmAngle = float(self.robotArm.gcodeResponse[0])
-                    self.robotArm.upperArmAngle = float(self.robotArm.gcodeResponse[1])
-                    self.robotArm.rotationAngle = float(self.robotArm.gcodeResponse[2])
-                    # SHOW CURRENT POSITION
-                    self.kinematics_lower_show.setText(str(self.robotArm.lowerArmAngle))
-                    self.kinematics_upper_show.setText(str(self.robotArm.upperArmAngle))
-                    self.kinematics_rotation_show.setText(str(self.robotArm.rotationAngle))
-                    # UPDATE GUI
-                    QtWidgets.QApplication.processEvents()
-                    # UPDATE ARM SIMULATION GRAPH
-                    self.robotArm.calculateJointCoordinates()
-                    self.updateGraph(False)
-
-                    # SET REFRESH RATE
-                    self.timeDelay(0.1)
-
-                    # REFRESH CURRENT POSITION    
-                    self.comms.write('?'.encode('ascii'))
-                    position = str(self.comms.readline().decode('ascii'))
-
-                # WHEN ARM HAS FINISHED MOVEMENT
-                if 'Idle' in position:
-                    self.serial_terminal.appendPlainText('Move complete')
-                    break           
-
-            # STOP SEQUENCE IF IT HAS REACHED LAST POSITION
-            if self.robotArm.sequenceSelected == self.robotArm.sequenceLength - 1:
-                # LOOP BACK TO BEGINNING IF REPEAT IS ENABLED
-                if self.robotArm.sequenceRepeat == True:
-                    self.robotArm.sequenceSelected = 0 
-                    self.sequence_show.setCurrentRow(self.robotArm.sequenceSelected)
-                    self.sequence_progress.setValue(self.robotArm.sequenceSelected * self.robotArm.sequenceProgressStep)
-                    self.sequenceListUpdate()
+            # LINEAR PLANAR MOVEMENT
+            if self.robotArm.linearMotion == 1:
+                # FIND PREVIOUS POSITION
+                if self.robotArm.sequenceSelected == 0:
+                    # NO LINEAR MOVEMENT FOR FIRST ITEM IN LIST
+                    pass
                 else:
-                    self.fileStop()
+                    self.robotArm.sequenceSelected -= 1
+                    self.sequenceConverter()
+                    xPosOld = self.robotArm.xPos
+                    yPosOld = self.robotArm.yPos
+                    zPosOld = self.robotArm.zPos
+
+                    # FIND TARGET POSITION
+                    self.robotArm.sequenceSelected += 1
+                    self.sequenceConverter()
+                    xPosNew = self.robotArm.xPos
+                    yPosNew = self.robotArm.yPos
+                    zPosNew = self.robotArm.zPos
+
+                    # CALCULATE DISTANCE BETWEEN TWO SETS OF XYZ COORDINATES
+                    xyzDistance = math.sqrt((xPosNew - xPosOld)**2 + (yPosNew - yPosOld)**2 + (zPosNew - zPosOld)**2)
+
+                    # INTERVAL VARIABLE GOES FROM 0 -> 1 TO GET FROM OLD TO NEW POSITION
+                    # FIND INTERVAL STEP THAT MOVES POSITION BY 0.1MM TOWARDS TARGET POSITION
+                    stepDistance = 1
+                    interval = 1 / (xyzDistance / stepDistance)
+
+                    t = 0
+
+                    # INCREAMENT T BY INTERVAL AMOUNT UNTIL T EQUALS 1
+                    while t < 1:
+                        
+                        oldTime = datetime.datetime.now()
+
+                        # DEFINE STRAIGHT LINE BETWEEN OLD AND NEW POSITION
+                        # (x2,y2,z2) = (x1,y1,z1) + t(dx,dy,dz)
+                        t += interval
+
+                        self.robotArm.xPos = xPosOld + (t * xPosNew - xPosOld)
+                        #print(self.robotArm.xPos)
+                        self.robotArm.yPos = yPosOld + (t * yPosNew - yPosOld)
+                        #print(self.robotArm.yPos)
+                        self.robotArm.zPos = zPosOld + (t * zPosNew - zPosOld)
+                        #print(self.robotArm.zPos)
+
+                        # CALCULATE KINEMATICS AND SEND GCODE COMMAND
+                        self.robotArm.calculateKinematics()
+                        self.comms.write(self.robotArm.outputGCode.encode('ascii'))
+                        self.timeDelay(0.05)
+
+                        if (datetime.datetime.now() - oldTime).total_seconds() > 0.1:
+                            oldTime = datetime.datetime.now()
+                            self.serial_terminal.appendPlainText(self.robotArm.outputGCode.replace('\r\n',''))
+                            # UPDATE ARM SIMULATION GRAPH
+                            self.robotArm.calculateJointCoordinates()
+                            self.updateGraph(False)
+
+                # STOP SEQUENCE IF IT HAS REACHED LAST POSITION
+                if self.robotArm.sequenceSelected == self.robotArm.sequenceLength - 1:
+                    # LOOP BACK TO BEGINNING IF REPEAT IS ENABLED
+                    if self.robotArm.sequenceRepeat == True:
+                        self.robotArm.sequenceSelected = 0 
+                        self.sequence_show.setCurrentRow(self.robotArm.sequenceSelected)
+                        self.sequence_progress.setValue(self.robotArm.sequenceSelected * self.robotArm.sequenceProgressStep)
+                        self.sequenceListUpdate()
+                    else:
+                        self.fileStop()
+                else:
+                    # MOVE TO NEXT POSITION
+                    self.fileNext()
+            
+            # NORMAL MOVEMENT
             else:
-                # MOVE TO NEXT POSITION
-                self.fileNext()
+                # UPDATE POSITION, CALCULATE KINEMATICS AND SEND GCODE COMMAND
+                self.positionUpdate()
+                
+                while True:
+                    # READ CURRENT ARM POSITION FROM ARM CONTROL BOARD
+                    self.comms.write('?'.encode('ascii'))
+                    position = str(self.comms.readline().decode('ascii'))
+
+                    startTime = startTime = datetime.datetime.now()
+                    currentTime = 0
+                    timeDifference = 0
+
+                    # WAIT FOR ARM TO START MOVING (WHEN 'IDLE' BECOMES 'RUN')
+                    while ('Idle' in position) and self.robotArm.playbackStatus == True:
+                        self.comms.write('?'.encode('ascii'))
+                        position = str(self.comms.readline().decode('ascii'))
+                        # UPDATE GUI
+                        QtWidgets.QApplication.processEvents()
+                        # MOVE ON TO NEXT POSITION IF THE ARM DOES NOT START MOVING AFTER 1 SECOND
+                        # THIS OCCURS WHEN THE ARM IS ALREADY IN THE DESIRED POSITION
+                        # GETTING CURRENT TIME
+                        currentTime = datetime.datetime.now()
+                        # CALCULATING SECONDS ELAPSED
+                        timeDifference = (currentTime - startTime).total_seconds()
+                        if timeDifference > 1:
+                            break
+
+                    # WAIT FOR ARM TO FINISH MOVEMENT
+                    # GET CURRENT ARM POSITION
+                    while 'Run' in position:
+                        gcodeCurrentPosition = position
+                        # REMOVE NON-NUMERICAL CHARACTERS TO EXTRACT JUST THE COORDINATES
+                        junk = ['<Idle|','<Run|','MPos:','|',',']   
+                        for item in junk:
+                            gcodeCurrentPosition = gcodeCurrentPosition.replace(item, ' ')
+                            # PUT CURRENT POSITION IN ARRAY
+                            self.robotArm.gcodeResponse = gcodeCurrentPosition.split()
+
+                        # STORE ACTUAL ARM POSITION
+                        self.robotArm.lowerArmAngle = float(self.robotArm.gcodeResponse[0])
+                        self.robotArm.upperArmAngle = float(self.robotArm.gcodeResponse[1])
+                        self.robotArm.rotationAngle = float(self.robotArm.gcodeResponse[2])
+                        # SHOW CURRENT POSITION
+                        self.kinematics_lower_show.setText(str(self.robotArm.lowerArmAngle))
+                        self.kinematics_upper_show.setText(str(self.robotArm.upperArmAngle))
+                        self.kinematics_rotation_show.setText(str(self.robotArm.rotationAngle))
+                        # UPDATE GUI
+                        QtWidgets.QApplication.processEvents()
+                        # UPDATE ARM SIMULATION GRAPH
+                        self.robotArm.calculateJointCoordinates()
+                        self.updateGraph(False)
+
+                        # SET REFRESH RATE
+                        self.timeDelay(0.1)
+
+                        # REFRESH CURRENT POSITION    
+                        self.comms.write('?'.encode('ascii'))
+                        position = str(self.comms.readline().decode('ascii'))
+
+                    # WHEN ARM HAS FINISHED MOVEMENT
+                    if 'Idle' in position:
+                        self.serial_terminal.appendPlainText('Move complete')
+                        break           
+
+                # STOP SEQUENCE IF IT HAS REACHED LAST POSITION
+                if self.robotArm.sequenceSelected == self.robotArm.sequenceLength - 1:
+                    # LOOP BACK TO BEGINNING IF REPEAT IS ENABLED
+                    if self.robotArm.sequenceRepeat == True:
+                        self.robotArm.sequenceSelected = 0 
+                        self.sequence_show.setCurrentRow(self.robotArm.sequenceSelected)
+                        self.sequence_progress.setValue(self.robotArm.sequenceSelected * self.robotArm.sequenceProgressStep)
+                        self.sequenceListUpdate()
+                    else:
+                        self.fileStop()
+                else:
+                    # MOVE TO NEXT POSITION
+                    self.fileNext()
 
         # RESET PLAYBACK STATUS AND RE-ENABLE BUTTONS    
         self.robotArm.playbackStatus = False
@@ -994,6 +1066,7 @@ class Ui(QtWidgets.QMainWindow):
     
     # SET UP ARM CONTROLLER TO RECIEVE POSITION COMMANDS
     def gCodeInitialSetup(self):
+        self.enableMovementButtons(False)
         # CALCULATE STEPS PER DEGREE ROTATION DEPENDING ON WHICH MICROSTEPPING OPTION IS SELECTED
         self.robotArm.xStepDeg = format(((200 * int(self.robotArm.microStep) * self.robotArm.xGearRatio) / 360), '.3f')
         self.robotArm.yStepDeg = format(((200 * int(self.robotArm.microStep) * self.robotArm.yGearRatio) / 360), '.3f')
@@ -1054,6 +1127,7 @@ class Ui(QtWidgets.QMainWindow):
         self.timeDelay(0.1)
         
         self.serial_terminal.appendPlainText('Setup complete')
+        self.enableMovementButtons(True)
 
 class RobotArm():
     ##################
@@ -1070,7 +1144,8 @@ class RobotArm():
 
     xGearRatio = 50.89
     yGearRatio = 50.89
-    zGearRatio = 26.85
+    #zGearRatio = 26.85
+    zGearRatio = 3.75
 
     xStepDeg = 0
     yStepDeg = 0

@@ -212,12 +212,12 @@ class Ui(QtWidgets.QMainWindow):
         self.serial_port_list.setEnabled(state)
         self.serial_refresh.setEnabled(state)
 
-        self.x_show.setEnabled(state)
-        self.y_show.setEnabled(state)
-        self.z_show.setEnabled(state)
-        self.arm_angle_show.setEnabled(state)
-        self.endeff_angle_show.setEnabled(state)
-        self.endeff_gripper_show.setEnabled(state)     
+        self.x_show.setReadOnly(not state)
+        self.y_show.setReadOnly(not state)
+        self.z_show.setReadOnly(not state)
+        self.arm_angle_show.setReadOnly(not state)
+        self.endeff_angle_show.setReadOnly(not state)
+        self.endeff_gripper_show.setReadOnly(not state)     
 
         self.enableFileButtons(state)
         self.enableMovementButtons(state)
@@ -444,31 +444,29 @@ class Ui(QtWidgets.QMainWindow):
             # THIS MOVES THE ARM ALONG THE STRAIGHT XYZ LINE
             while t < 1:
                 
-                oldTime = datetime.datetime.now()
+                #oldTime = datetime.datetime.now()
 
                 # DEFINE STRAIGHT LINE BETWEEN OLD AND NEW POSITION
                 # (x2,y2,z2) = (x1,y1,z1) + t(dx,dy,dz)
                 t += interval
 
                 self.robotArm.xPos = xPosOld + (t * xPosNew - xPosOld)
-                #print(self.robotArm.xPos)
                 self.robotArm.yPos = yPosOld + (t * yPosNew - yPosOld)
-                #print(self.robotArm.yPos)
                 self.robotArm.zPos = zPosOld + (t * zPosNew - zPosOld)
-                #print(self.robotArm.zPos)
 
                 # CALCULATE KINEMATICS AND SEND GCODE COMMAND
                 self.robotArm.calculateKinematics()
                 self.comms.write(self.robotArm.outputGCode.encode('ascii'))
+                self.serial_terminal.appendPlainText(self.robotArm.outputGCode.replace('\r\n',''))
                 self.timeDelay(0.1)
 
-                # UPDATE CURRENT POSITION ON GUI EVERY 100MS
+                """ # UPDATE CURRENT POSITION ON GUI EVERY 100MS
                 if (datetime.datetime.now() - oldTime).total_seconds() > 0.1:
                     oldTime = datetime.datetime.now()
                     self.serial_terminal.appendPlainText(self.robotArm.outputGCode.replace('\r\n',''))
                     # UPDATE ARM SIMULATION GRAPH
                     self.robotArm.calculateJointCoordinates()
-                    self.updateGraph(False)
+                    self.updateGraph(False) """
 
     def normalMovement(self):
         # MOVES EACH AXIS PROPORTIONATELY IN XYZ PLANE
@@ -544,7 +542,7 @@ class Ui(QtWidgets.QMainWindow):
         self.serial_terminal.appendPlainText('%s sequence playback started' % self.robotArm.fileName)
         self.robotArm.sequenceLength = len(self.robotArm.sequenceElements)
         
-        # LOOP THROUGH SEQUENCE LINE BY LINE
+        # LOOP THROUGH SEQUENCE LINE BY LINE UNTIL END OR STOP BUTTON PRESSED
         while(self.robotArm.sequenceSelected != self.robotArm.sequenceLength) and self.robotArm.playbackStatus == True:
 
             # GET XYZ COORDINATES FOR TARGET POSITION
@@ -914,8 +912,9 @@ class Ui(QtWidgets.QMainWindow):
         self.sequence_edit.setText(str(self.robotArm.currentPosition))
         # CALCULATE ROTATION FROM XYZ COORDINATES
         self.robotArm.calculateCurrentPosition(True)
-        # UPDATE POSITIONAL DATA
-        self.positionUpdate()
+        if self.robotArm.playbackStatus == False:
+            # UPDATE POSITIONAL DATA
+            self.positionUpdate()
 
     # RELOADS THE SEQUENCE LIST USING ELEMENTS IN THE sequenceElements ARRAY 
     # IF ARM IS ENABLED, CURRENT POSITION WILL ALSO BE UPDATED TO SELECTED LIST ELEMENT
@@ -1065,6 +1064,46 @@ class Ui(QtWidgets.QMainWindow):
     # SEND ROBOT ARM TO END STOP SWITCHES TO DETERMINE ITS POSITION
     def calibrateRobot(self):
         self.serial_terminal.appendPlainText('Calibration procedure started')
+
+        # ENABLE HOMING
+        self.comms.flush()
+        self.comms.write(('$22=1\r\n').encode('ascii'))
+        self.timeDelay(0.1)
+        # SET LIMIT SWITCH LOCATION
+        self.comms.flush()
+        self.comms.write(('$23=3\r\n').encode('ascii'))
+        self.timeDelay(0.1)
+
+        self.comms.flush()
+        self.comms.write('$H\r'.encode('ascii'))   
+
+        # CLEAR INPUT BUFFER SO THE ONLY INPUT IS AFTER THE HOMING CYCLE IS COMPLETE
+        self.comms.flushInput()    
+        
+        # WAIT FOR GRBL TO RETURN 'OK' TO SIGNAL HOMING IS COMPLETE
+        while True:
+            if self.comms.in_waiting:
+                status = self.comms.readline().decode('ascii')
+                if 'ok' in status:
+                    break
+            # KEEP GUI REPONSIVE
+            QtWidgets.QApplication.processEvents()
+
+        self.timeDelay(1)
+
+        # SET AS HOME TO PREVENT GRBL THINKING THE ARM IS AT THE OTHER EXTREME OF ITS TRAVEL
+        self.comms.flush()
+        self.comms.write(('G10 P0 L20 X0.000 Y0.000 Z0.000\r\n').encode('ascii'))
+        self.timeDelay(0.1)
+        
+        # MOVE ARM TO RESTING POSITION
+        self.comms.write(('G01 X%s Y%s Z%s F1000\r\n' % (self.robotArm.xHomeOffset, self.robotArm.yHomeOffset, self.robotArm.zHomeOffset)).encode('ascii'))
+
+        # RESET AS FINAL HOME POSITION
+        self.comms.flush()
+        self.comms.write(('G10 P0 L20 X0.000 Y0.000 Z0.000\r\n').encode('ascii'))
+        self.timeDelay(0.1)
+
         self.serial_terminal.appendPlainText('Calibration procedure complete')
     
     # SET UP ARM CONTROLLER TO RECIEVE POSITION COMMANDS
@@ -1089,43 +1128,43 @@ class Ui(QtWidgets.QMainWindow):
     
         # SET STEPS PER DEGREE ROTATION FOR EACH AXIS
         self.comms.flush()
-        self.comms.write(('$100=%s\r' % self.robotArm.xStepDeg).encode('ascii'))
+        self.comms.write(('$100=%s\r\n' % self.robotArm.xStepDeg).encode('ascii'))
         self.serial_terminal.appendPlainText('X axis steps per degree: %s' % self.robotArm.xStepDeg)
         self.timeDelay(0.1)
         self.comms.flush()
-        self.comms.write(('$101=%s\r' % self.robotArm.yStepDeg).encode('ascii'))
+        self.comms.write(('$101=%s\r\n' % self.robotArm.yStepDeg).encode('ascii'))
         self.serial_terminal.appendPlainText('Y axis steps per degree: %s' % self.robotArm.yStepDeg)
         self.timeDelay(0.1)
         self.comms.flush()
-        self.comms.write(('$102=%s\r' % self.robotArm.zStepDeg).encode('ascii'))
+        self.comms.write(('$102=%s\r\n' % self.robotArm.zStepDeg).encode('ascii'))
         self.serial_terminal.appendPlainText('Z axis steps per degree: %s' % self.robotArm.zStepDeg)
         self.timeDelay(0.1)
        
         # SET MAX SPEED FOR EACH AXIS
         self.comms.flush()
-        self.comms.write(('$110=%s\r' % self.robotArm.xMaxFeedRate).encode('ascii'))
+        self.comms.write(('$110=%s\r\n' % self.robotArm.xMaxFeedRate).encode('ascii'))
         self.serial_terminal.appendPlainText('X max feedrate: %s' % self.robotArm.xMaxFeedRate)
         self.timeDelay(0.1)
         self.comms.flush()
-        self.comms.write(('$111=%s\r' % self.robotArm.yMaxFeedRate).encode('ascii'))
+        self.comms.write(('$111=%s\r\n' % self.robotArm.yMaxFeedRate).encode('ascii'))
         self.serial_terminal.appendPlainText('Y max feedrate: %s' % self.robotArm.yMaxFeedRate)
         self.timeDelay(0.1)
         self.comms.flush()
-        self.comms.write(('$112=%s\r' % self.robotArm.zMaxFeedRate).encode('ascii'))
+        self.comms.write(('$112=%s\r\n' % self.robotArm.zMaxFeedRate).encode('ascii'))
         self.serial_terminal.appendPlainText('Z max feedrate: %s' % self.robotArm.zMaxFeedRate)
         self.timeDelay(0.1)
 
         # SET ACCELERATION RATE FOR EACH AXIS
         self.comms.flush()
-        self.comms.write(('$120=%s\r' % self.robotArm.xAcceleration).encode('ascii'))
+        self.comms.write(('$120=%s\r\n' % self.robotArm.xAcceleration).encode('ascii'))
         self.serial_terminal.appendPlainText('X acceleration: %s' % self.robotArm.xAcceleration)
         self.timeDelay(0.1)
         self.comms.flush()
-        self.comms.write(('$121=%s\r' % self.robotArm.yAcceleration).encode('ascii'))
+        self.comms.write(('$121=%s\r\n' % self.robotArm.yAcceleration).encode('ascii'))
         self.serial_terminal.appendPlainText('Y acceleration: %s' % self.robotArm.yAcceleration)
         self.timeDelay(0.1)
         self.comms.flush()
-        self.comms.write(('$122=%s\r' % self.robotArm.zAcceleration).encode('ascii'))
+        self.comms.write(('$122=%s\r\n' % self.robotArm.zAcceleration).encode('ascii'))
         self.serial_terminal.appendPlainText('Z acceleration: %s' % self.robotArm.zAcceleration)
         self.timeDelay(0.1)
         
@@ -1159,6 +1198,10 @@ class RobotArm():
     xAcceleration = 0
     yAcceleration = 0
     zAcceleration = 0
+
+    xHomeOffset = 10
+    yHomeOffset = 10
+    zHomeOffset = -10
 
     # TARGET POSITIONAL COORDINATES
     xPos = 0.0

@@ -460,7 +460,7 @@ class Ui(QtWidgets.QMainWindow):
                 # CALCULATE KINEMATICS AND SEND GCODE COMMAND
                 self.robotArm.calculateKinematics()
                 self.comms.write(self.robotArm.outputGCode.encode('ascii'))
-                self.timeDelay(0.05)
+                self.timeDelay(0.1)
 
                 # UPDATE CURRENT POSITION ON GUI EVERY 100MS
                 if (datetime.datetime.now() - oldTime).total_seconds() > 0.1:
@@ -564,10 +564,13 @@ class Ui(QtWidgets.QMainWindow):
                 if self.robotArm.sequenceRepeat == True:
                     self.robotArm.sequenceSelected = 0 
                     self.sequence_show.setCurrentRow(self.robotArm.sequenceSelected)
-                    self.sequence_progress.setValue(self.robotArm.sequenceSelected * self.robotArm.sequenceProgressStep)
+                    self.calculateSequenceProgress()
                     self.sequenceListUpdate()
                 else:
                     self.fileStop()
+                    self.robotArm.sequenceSelected = 0 
+                    self.sequence_show.setCurrentRow(self.robotArm.sequenceSelected)
+                    self.calculateSequenceProgress()
             else:
                 # MOVE TO NEXT POSITION
                 self.fileNext()
